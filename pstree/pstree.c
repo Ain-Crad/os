@@ -50,11 +50,11 @@ char* itoa(int val, char* str){
 
 struct Node* BuildTree(int cnt){ 
   for(int i = 0; i < cnt; ++i){
-    char pid_str[10];
+    char pid_str[10] = {'\0'};
     itoa(pids[i], pid_str);
     char file_name[20] = "/proc/";
     strcat(file_name, pid_str);
-    printf("%s", file_name);
+    printf("%s\n", file_name);
   }
   return NULL;
 }
