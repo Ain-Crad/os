@@ -8,6 +8,12 @@
 #include <string.h>
 
 int pids[1000];
+char pid_name[40000][50];
+int graph[40000][100];
+int end_pos[40000];
+int par[40000];
+
+bool PRINT_PID;
 
 bool IsPid(char* name){
   char* ch = name;
@@ -54,8 +60,7 @@ void GetContent(FILE* fp, char* header, int len1, char* content, int len2){
   memset(header, 0, len1 * sizeof(char));
   memset(content, 0, len2 * sizeof(char));
 
-  fgets(header, len1, fp);
-  int real_len = strlen(header);
+  fgets(header, len1, fp); int real_len = strlen(header);
   header[real_len - 1] = '\0';
   
   int pos = FindColon(header);
@@ -66,43 +71,60 @@ void GetContent(FILE* fp, char* header, int len1, char* content, int len2){
   strcpy(content, header + pos);
 }
 
-void PrintTree(int (*graph)[100], char (*pid_name)[50], int pid, int pos, bool oneline){
-  printf("%s %d\n", pid_name[pid], pos);
-
+void PrintTree(int pid, int pos, bool oneline){
+  // printf("%s %d\n", pid_name[pid], pos);
+  
   int len = strlen(pid_name[pid]);
+  
+  char pid_str[10];
+  memset(pid_str, 0, sizeof(pid_str));
+  itoa(pid, pid_str);
+  if(PRINT_PID) len += strlen(pid_str) + 2;
 
-  //if(!oneline){
-  //  for(int i = 0; i < pos; ++i) printf(" ");
-  //}
+  if(!oneline){
+    for(int i = 0; i < pos; ++i) printf(" ");
+  }
 
-  //if(pid != 1) for(int i = 0; i < 2; ++i) printf(" ");
+  if(pid != 1){
+    for(int i = 0; i < 3; ++i) printf(" ");
+  }
 
-  //printf("%s", pid_name[pid]);
+  printf("%s", pid_name[pid]);
+  if(PRINT_PID) printf("(%s)", pid_str);
   
   int cnt = 0;
   for(; graph[pid][cnt] != 0; ++cnt){
     int child = graph[pid][cnt];
-    if(cnt == 0)
-      PrintTree(graph, pid_name, child, pos + len, true);
-    else
-      PrintTree(graph, pid_name, child, pos + len, false);
+    
+    int pre = (pid == 1 ? 0 : 3); 
+    if(cnt == 0){
+      PrintTree(child, pos + pre + len, true);
+    }else{
+      PrintTree(child, pos + pre + len, false);
+    }
   }
 
-  //if(cnt == 0){
-  //  printf("\n");
-  //}
+  if(cnt == 0){
+    printf("\n");
+  }
 }
 
 void BuildTree(int cnt){
-  int max_pid = 0;
+  memset(end_pos, 0, sizeof(end_pos));
+  memset(graph, 0, sizeof(graph));
+
   for(int i = 0; i < cnt; ++i){
-    max_pid = pids[i] > max_pid ? pids[i] : max_pid;
+    int pid = pids[i];
+    int ppid = par[pid];
+    if(ppid == 0) continue;
+    int end = end_pos[ppid];
+    graph[ppid][end] = pid;
+    ++end_pos[ppid];
   }
+}
 
-  int par[max_pid + 1];
+void ReadProcStatus(int cnt){
   memset(par, 0, sizeof(par));
-
-  char pid_name[max_pid + 1][50];
   memset(pid_name, 0, sizeof(pid_name));
   
   for(int i = 0; i < cnt; ++i){
@@ -148,32 +170,27 @@ void BuildTree(int cnt){
     strcpy(pid_name[pid], name);
 
     fclose(fp);
-  }
-
-  int end_pos[max_pid + 1];
-  memset(end_pos, 0, sizeof(end_pos));
-
-  int graph[max_pid + 1][100];
-  memset(graph, 0, sizeof(graph));
-
-  for(int i = 0; i < cnt; ++i){
-    int pid = pids[i];
-    int ppid = par[pid];
-    if(ppid == 0) continue;
-    int end = end_pos[ppid];
-    graph[ppid][end] = pid;
-    ++end_pos[ppid];
-  }
-  
-  PrintTree(graph, pid_name, 1, 0, true);
+  }  
 }
 
 int main(int argc, char *argv[]) {
   for (int i = 0; i < argc; i++) {
     assert(argv[i]);
-    printf("argv[%d] = %s\n", i, argv[i]);
+    //printf("argv[%d] = %s\n", i, argv[i]);
   }
   assert(!argv[argc]);
+
+  PRINT_PID = false;
+ 
+  for(int i = 1; i < argc; ++i){
+    assert(argv[i]);
+    if(strcmp(argv[i], "-p") == 0){
+      PRINT_PID = true;    
+    }else{
+      printf("usage error! usage: pstree-* [-p]\n");
+      exit(EXIT_FAILURE);
+    }
+  }
 
   DIR* dp = opendir("/proc");
   if(dp == NULL){
@@ -191,7 +208,9 @@ int main(int argc, char *argv[]) {
 
   closedir(dp);
  
+  ReadProcStatus(cnt);
   BuildTree(cnt);
+  PrintTree(1, 0, true);
 
   return 0;
 }
