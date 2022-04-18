@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -7,20 +8,31 @@
 #include "ename.c.inc"
 #include "error_functions.h"
 
-#define BUF_SIZE 500
+#define ERR_BUF_SIZE 500
+
+static void terminate(){
+    char* s;
+    s = getenv("EF_DUMPCORE");
+
+    if(s != NULL && *s != '\0'){
+        abort();
+    }else{
+        exit(EXIT_FAILURE);
+    }
+}
 
 static void outputError(bool useErr, int err, bool flushStdout, const char* format, va_list ap){
-    char buf[BUF_SIZE], userMsg[BUF_SIZE], errText[BUF_SIZE];
+    char buf[2 * ERR_BUF_SIZE + 10], userMsg[ERR_BUF_SIZE], errText[ERR_BUF_SIZE];
 
-    vsnprintf(userMsg, BUF_SIZE, format, ap);
+    vsnprintf(userMsg, ERR_BUF_SIZE, format, ap);
     if(useErr){
-        snprintf(errText, BUF_SIZE, " [%s %s]", 
+        snprintf(errText, ERR_BUF_SIZE, " [%s %s]", 
                 (err > 0 && err <= MAX_ENAME) ? ename[err] : "?UNKNOWN?", strerror(err));
     }else{
-        snprintf(errText, BUF_SIZE, ":");
+        snprintf(errText, ERR_BUF_SIZE, ":");
     }
 
-    snprintf(buf, BUF_SIZE, "ERROR%s %s\n", errText, userMsg);
+    snprintf(buf, 2 * ERR_BUF_SIZE + 10, "ERROR%s %s\n", errText, userMsg);
     
     if(flushStdout) fflush(stdout);
     fputs(buf, stderr);
@@ -31,11 +43,9 @@ static void outputError(bool useErr, int err, bool flushStdout, const char* form
 void errExit(const char* format, ...){
     va_list argList;
     
-    int savedErrno = errno;
-
     va_start(argList, format);
     outputError(true, errno, true, format, argList);
     va_end(argList);
-    
-    errno = savedErrno;
+
+    terminate();
 }

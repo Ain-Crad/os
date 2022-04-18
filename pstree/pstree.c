@@ -1,275 +1,206 @@
-#include <stdio.h>
 #include <assert.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <ctype.h>
-#include <sys/types.h>
 #include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <limits.h>
+#include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
 
-int pids[1000];
-int cnt;
-char pid_name[40000][50];
+#include "error_functions.h"
 
-int graph[40000][100];
-int end_pos[40000];
-int par[40000];
+#define BUF_SIZE 1024
 
-char res[1000][1000];
-int row;
 
-bool PRINT_PID;
+char table[3][3][10] = {
+    {"┌─","┬─","─┐"},
+    {"├─","┼─","─┤"},
+    {"└─","┴─","─┘"}
+};
 
-bool IsPid(char* name){
-    char* ch = name;
-    for(; *ch; ++ch){
-        if(!isdigit(*ch)){
-            return false;
-        }
+char hozn[] = "──";
+char vert[] = "│ ";
+char space[] = "  ";
+
+void printTree();
+
+typedef struct Process Process;
+
+struct Process{
+    char* name;
+    pid_t pid;
+    Process* first_child;
+    Process* next_sib;
+};
+
+bool isNumber(const char* name){
+    for(size_t i = 0; i < strlen(name); ++i){
+        if(!isdigit(name[i])) return false;
     }
     return true;
 }
 
-void reverse_str(char* str){
-    int len = strlen(str);
-    int l = 0, r = len - 1;
-    while(l < r){
-        char tmp = str[l];
-        str[l] = str[r];
-        str[r] = tmp;
-        
-        ++l;
-        --r;
-    }
+char* getFilePath(const char* name){
+    static char path[_POSIX_PATH_MAX + 1];
+    
+    sprintf(path, "/proc/%s/status", name);
+
+    return path;
 }
 
-char* itoa(int val, char* str){
-    int p = 0;
-    while(val){
-        int x = val % 10;
-        val /= 10;
-        str[p++] = '0' + x;
-    }
-    reverse_str(str);
-    return str;
-}
-
-int FindColon(char* line){
-    int colon_pos = 0;
-    while(line[colon_pos] != ':') ++colon_pos;
-    line[colon_pos] = '\0';
-    return colon_pos;
-}
-
-void GetContent(FILE* fp, char* header, int len1, char* content, int len2){
-    memset(header, 0, len1 * sizeof(char));
-    memset(content, 0, len2 * sizeof(char));
-
-    fgets(header, len1, fp); int real_len = strlen(header);
-    header[real_len - 1] = '\0';
-    
-    int pos = FindColon(header);
-    
-    // skip whitespace
-    ++pos;
-    while(isspace(header[pos])) ++pos;
-    strcpy(content, header + pos);
-}
-
-void PrintTree(int pid, int pos, bool oneline){
-    int len = strlen(pid_name[pid]);
-    
-    char pid_str[10];
-    memset(pid_str, 0, sizeof(pid_str));
-    itoa(pid, pid_str);
-    if(PRINT_PID) len += strlen(pid_str) + 2;
-
-    if(!oneline){
-        for(int i = 0; i < pos; ++i) printf(" ");
-    }
-
-    if(pid != 1){
-        for(int i = 0; i < 3; ++i) printf(" ");
-    }
-
-    printf("%s", pid_name[pid]);
-    if(PRINT_PID) printf("(%s)", pid_str);
-    
-    int child_idx = 0;
-    for(; graph[pid][child_idx] != 0; ++child_idx){
-        int child = graph[pid][child_idx];
-        
-        int pre = (pid == 1 ? 0 : 3); 
-        if(child_idx == 0){
-            PrintTree(child, pos + pre + len, true);
-        }else{
-            PrintTree(child, pos + pre + len, false);
+long getMaxPid(){
+    static long max_pid = -1;
+    if(max_pid == -1){
+        FILE* f = fopen("/proc/sys/kernel/pid_max", "r");
+        if(f == NULL){
+            errExit("fopen");
+        }
+        if(fscanf(f, "%ld", &max_pid) != 1){
+            errExit("fscanf");
         }
     }
 
-    if(child_idx == 0){
-        printf("\n");
-    }
+    return max_pid;
 }
 
-void FillRes(int pid, int pos, bool oneline){
-    int cur_pos = pos;
+Process* getProcess(int id){
+    static Process* processes = NULL;
     
-    char pid_str[10];
-    memset(pid_str, 0, sizeof(pid_str));
-    itoa(pid, pid_str);
-    
-    if(!oneline){
-        for(int i = 0; i < pos; ++i) res[row][i] = ' ';
+    if(processes == NULL){
+        long size = getMaxPid() + 1;
+        processes = malloc(sizeof(Process) * size);
+        memset(processes, 0, sizeof(processes) * size);
     }
 
-    if(pid != 1){
-        if(oneline) sprintf(&(res[row][cur_pos]), "---");
-        else sprintf(&(res[row][cur_pos]), " |-");
-        cur_pos += 3;
-    }
-    
-    sprintf(&(res[row][cur_pos]), "%s", pid_name[pid]);
-    cur_pos += strlen(pid_name[pid]);
+    return &processes[id];
+}
 
-    if(PRINT_PID){
-        sprintf(&(res[row][cur_pos]), "(%s)", pid_str);
-        cur_pos += strlen(pid_str) + 2;
-    }
+int main(int argc, char* argv[]){
+    bool PRINT_PID = false;
 
-    int child_idx = 0;
-    for(; graph[pid][child_idx] != 0; ++child_idx){
-        int child = graph[pid][child_idx];
-
-        int pre = (pid == 1 ? 0 : 3);
-        if(child_idx == 0){
-            FillRes(child, cur_pos, true);
-        }else{
-            FillRes(child, cur_pos, false);
+    if(argc > 1){
+        for(int i = 1; i < argc; ++i){
+            if(strcmp(argv[i], "-p") == 0){
+                PRINT_PID = true;
+            }else{
+                printf("Usage error: pstree [-p]\n");
+                exit(EXIT_FAILURE);
+            }
         }
     }
-    
-    if(child_idx == 0){
-        ++row;
+
+    DIR* proc_dir = opendir("/proc");
+    if(proc_dir == NULL){
+        errExit("opendir");
     }
-}
 
-void PrintTree2(int pid, int pos, bool oneline){
-    FillRes(pid, pos, oneline);
-    int i = 0;
-    while(res[i] && strlen(res[i]) > 0){
-        printf("%s\n", res[i]);
-        ++i;
-    }
-}
+    struct dirent* subdir;
+    while((subdir = readdir(proc_dir)) != NULL){
+        if(!isNumber(subdir->d_name)) continue;
 
-void BuildTree(){
-    memset(end_pos, 0, sizeof(end_pos));
-    memset(graph, 0, sizeof(graph));
+        FILE* f = fopen(getFilePath(subdir->d_name), "r");
+        if(f == NULL){
+            errno = 0;
+            continue;
+        }
 
-    for(int i = 0; i < cnt; ++i){
-        int pid = pids[i];
-        int ppid = par[pid];
-        if(ppid == 0) continue;
-        int end = end_pos[ppid];
-        graph[ppid][end] = pid;
-        ++end_pos[ppid];
-    }
-}
+        // read content line by line
+        char buf[BUF_SIZE];
 
-void ReadProcStatus(){
-    memset(par, 0, sizeof(par));
-    memset(pid_name, 0, sizeof(pid_name));
-    
-    for(int i = 0; i < cnt; ++i){
-        char pid_str[10] = {'\0'};
-        itoa(pids[i], pid_str);
-        char file_name[30] = "/proc/";
-        strcat(file_name, pid_str);
-        strcat(file_name, "/status");
-
-        // printf("%s\n", file_name);
+        char proc_name[BUF_SIZE] = {'\0'};
+        pid_t pid = 0;
+        pid_t ppid = 0;
         
-        FILE* fp = fopen(file_name, "r");
-        if(fp == NULL){
-            printf("Couldn't open file %s", file_name);
-            exit(EXIT_FAILURE);
+        int parsed = 0;
+
+        while(fgets(buf, BUF_SIZE, f)){
+            if(parsed >= 3) break;
+
+            if(strncmp("Name:", buf, 5) == 0){
+                int whitespace = 0;
+                while(isspace(buf[5 + whitespace])) ++whitespace;
+                strcpy(proc_name, buf + 5 + whitespace);
+                int len = strlen(proc_name);
+                proc_name[len - 1] = '\0';
+                ++parsed;
+            }else if(strncmp("Pid:", buf, 4) == 0){
+                sscanf(buf + 4, "%d", &pid);
+                ++parsed;
+            }else if(strncmp("PPid:", buf, 5) == 0){
+                sscanf(buf + 5, "%d", &ppid);
+                ++parsed;
+            }
         }
+
+        assert(parsed == 3);
+       
         
-        char header[50] = {'\0'};
-        char content[50] = {'\0'};
-        // get name
-        char name[50] = {'\0'};
-        GetContent(fp, header, 50, content, 50);
-        assert(strcmp(header, "Name") == 0);
-        strcpy(name, content);
-        // skip State and Tgid
-        GetContent(fp, header, 50, content, 50);
-        assert(strcmp(header, "State") == 0);
-        GetContent(fp, header, 50, content, 50);
-        assert(strcmp(header, "Tgid") == 0);
-        // get pid
-        GetContent(fp, header, 50, content, 50);
-        assert(strcmp(header, "Pid") == 0);
-        int pid = atoi(content);
-        // get ppid
-        GetContent(fp, header, 50, content, 50);
-        assert(strcmp(header, "PPid") == 0);
-        int ppid = atoi(content);
-
-        // printf("%s %d %d\n", name, pid, ppid);
-        
-        par[pid] = ppid;
-
-        strcpy(pid_name[pid], name);
-
-        fclose(fp);
-    }    
-}
-
-int main(int argc, char *argv[]) {
-    for (int i = 0; i < argc; i++) {
-        assert(argv[i]);
-        //printf("argv[%d] = %s\n", i, argv[i]);
-    }
-    assert(!argv[argc]);
-
-    PRINT_PID = false;
- 
-    for(int i = 1; i < argc; ++i){
-        assert(argv[i]);
-        if(strcmp(argv[i], "-p") == 0){
-            PRINT_PID = true;        
-        }else{
-            printf("usage error! usage: pstree-* [-p]\n");
-            exit(EXIT_FAILURE);
+        if(PRINT_PID){
+            char pid_str[10] = {'\0'};
+            sprintf(pid_str, "(%d)", pid);
+            strcat(proc_name, pid_str);
         }
+
+        Process* parent = getProcess(ppid);
+        Process* proc = getProcess(pid);
+        proc->name = malloc(sizeof(char) * (strlen(proc_name) + 1));
+        strcpy(proc->name, proc_name);
+        proc->next_sib = parent->first_child;
+        parent->first_child = proc;
     }
 
-    DIR* dp = opendir("/proc");
-    if(dp == NULL){
-        printf("Couldn't open directory\n");
-        exit(EXIT_FAILURE);
-    }
-
-    struct dirent* ep;
-    cnt = 0;
-    while((ep = readdir(dp)) != NULL){
-        if(IsPid(ep->d_name)){
-            pids[cnt++] = atoi(ep->d_name);
-        }
-    }
-
-    closedir(dp);
- 
-    ReadProcStatus();
-    BuildTree();
-    //PrintTree(1, 0, true);
-
-    memset(res, 0, sizeof(res));
-
-    row = 0;
-    PrintTree2(1, 0, true);
+    printTree(getProcess(1), 0);
 
     return 0;
+}
+
+void printTree(Process* proc, int pos){
+    static char* content[50000];
+
+    content[pos++] = proc->name;
+
+    int child_count = 0;
+    for(Process* p = proc->first_child; p != NULL; p = p->next_sib){
+        ++child_count;
+    }
+
+    if(child_count == 0){
+        for(int i = 0; i < pos; ++i){
+            printf("%s", content[i]);
+        }
+        printf("\n");
+
+        for(int i = 1; i < pos; i += 2){
+            if(content[i] == hozn) content[i] = space;
+            else if(content[i] == table[0][1]) content[i] = vert;
+            else if(content[i] == table[2][0]) content[i] = space;
+            else if(content[i] == table[1][0]) content[i] = vert;
+        }
+
+        for(int i = 0; i < pos; i += 2){
+            for(int j = 0; j < strlen(content[i]); ++j){
+                content[i][j] = ' ';
+            }
+        }
+
+        return;
+    }
+
+    int t = 0;
+    for(Process* p = proc->first_child; p != NULL; p = p->next_sib, ++t){
+        if(t == 0){
+            content[pos++] = (p->next_sib == NULL) ? hozn : table[0][1];
+        }else if(t == child_count - 1){
+            content[pos++] = table[2][0];
+        }else{
+            content[pos++] = table[1][0];
+        }
+
+        printTree(p, pos);
+
+        --pos;
+    }
 }
