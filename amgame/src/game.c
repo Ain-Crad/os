@@ -4,7 +4,7 @@
 int main(const char *args) {
     ioe_init();
 
-    printf("Message%d: %s%ld\n", 1, "hello");
+    printf("Message%d: %s%ld\n", -123456, "hello");
     puts("mainargs = \"");
     puts(args); // make run mainargs=xxx
     puts("\"\n");
