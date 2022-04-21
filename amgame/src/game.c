@@ -1,10 +1,10 @@
 #include <game.h>
+#include <limits.h>
 
 // Operating system is a C program!
 int main(const char *args) {
     ioe_init();
-
-    printf("Message%d: %s%ld\n", -123456, "hello");
+    
     puts("mainargs = \"");
     puts(args); // make run mainargs=xxx
     puts("\"\n");
