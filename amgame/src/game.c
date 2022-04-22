@@ -18,7 +18,7 @@
 //    return 0;
 //}
 
-const int FPS = 30;
+const int FPS = 10;
 
 Snake snake;
 
@@ -31,9 +31,7 @@ void game_init(){
 }
 
 void game_progress(){
-    if(snake.direc != NONE){
-        move_snake();
-    }
+    move_snake();
 }
 
 void screen_update(){

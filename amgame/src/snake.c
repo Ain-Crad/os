@@ -6,7 +6,7 @@ void snake_init(){
     int x_grid_num = w / GRID_SIZE;
     int y_grid_num = h / GRID_SIZE;
 
-    snake.direc = NONE;
+    snake.direc = LEFT;
     snake.size = SNAKE_INIT_SIZE;
     snake.body[0] = (Body){x_grid_num / 2 - 1, y_grid_num / 2};
     snake.body[1] = (Body){x_grid_num / 2, y_grid_num / 2}; 
@@ -35,7 +35,6 @@ void move_snake(){
         case NONE:
             break;
     }
-    snake.direc = NONE;
     
     snake.body[0] = (Body){x, y};
 }

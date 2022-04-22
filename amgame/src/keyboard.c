@@ -1,12 +1,12 @@
 #include <game.h>
 
-
+/*
 #define KEYNAME(key) \
   [AM_KEY_##key] = #key,
 static const char *key_names[] = {
   AM_KEYS(KEYNAME)
 };
-
+*/
 
 //void print_key() {
 //  AM_INPUT_KEYBRD_T event = { .keycode = AM_KEY_NONE };
@@ -21,8 +21,8 @@ static const char *key_names[] = {
 int read_key(){
     AM_INPUT_KEYBRD_T event = io_read(AM_INPUT_KEYBRD);
     if(event.keycode != AM_KEY_NONE && event.keydown){
-        printf("Key pressed: ");
-        printf("%s\n", key_names[event.keycode]);
+        //printf("Key pressed: ");
+        //printf("%s\n", key_names[event.keycode]);
         return event.keycode;
     }
     return AM_KEY_NONE;
